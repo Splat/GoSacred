@@ -1,6 +1,7 @@
 package main
 
 import (
+	"GoSacred/lib"
 	"GoSacred/types"
 	"bytes"
 	"fmt"
@@ -8,61 +9,6 @@ import (
 	"math/rand"
 	"os"
 )
-
-/* ---------------- SVG Builder ---------------- */
-type SVG struct {
-	w, h int
-	buf  bytes.Buffer
-}
-
-func NewSVG(w, h int, bg string) *SVG {
-	s := &SVG{w: w, h: h}
-	s.buf.WriteString(fmt.Sprintf(
-		`<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" viewBox="0 0 %d %d">`,
-		w, h, w, h,
-	))
-	s.rect(0, 0, float64(w), float64(h), bg, 1.0)
-	return s
-}
-
-func (s *SVG) Close() string {
-	s.buf.WriteString(`</svg>`)
-	return s.buf.String()
-}
-
-func (s *SVG) rect(x, y, w, h float64, fill string, op float64) {
-	s.buf.WriteString(fmt.Sprintf(
-		`<rect x="%.3f" y="%.3f" width="%.3f" height="%.3f" fill="%s" opacity="%.3f"/>`,
-		x, y, w, h, fill, op,
-	))
-}
-
-func (s *SVG) circle(cx, cy, r float64, stroke string, sw float64, op float64, fill string) {
-	if fill == "" {
-		fill = "none"
-	}
-	s.buf.WriteString(fmt.Sprintf(
-		`<circle cx="%.3f" cy="%.3f" r="%.3f" fill="%s" stroke="%s" stroke-width="%.3f" opacity="%.3f"/>`,
-		cx, cy, r, fill, stroke, sw, op,
-	))
-}
-
-func (s *SVG) line(x1, y1, x2, y2 float64, stroke string, sw float64, op float64) {
-	s.buf.WriteString(fmt.Sprintf(
-		`<line x1="%.3f" y1="%.3f" x2="%.3f" y2="%.3f" stroke="%s" stroke-width="%.3f" opacity="%.3f"/>`,
-		x1, y1, x2, y2, stroke, sw, op,
-	))
-}
-
-func (s *SVG) path(d string, stroke string, sw float64, op float64, fill string) {
-	if fill == "" {
-		fill = "none"
-	}
-	s.buf.WriteString(fmt.Sprintf(
-		`<path d="%s" fill="%s" stroke="%s" stroke-width="%.3f" opacity="%.3f"/>`,
-		d, fill, stroke, sw, op,
-	))
-}
 
 /* ---------------- Geometry ---------------- */
 type Pt struct{ X, Y float64 }
@@ -95,27 +41,8 @@ func quantizeAngle(th float64, order int) float64 {
 	return math.Round(th/step) * step
 }
 
-/* ---------------- Motifs ---------------- */
-
-func randRange(rng *rand.Rand, a, b float64) float64 {
-	return a + rng.Float64()*(b-a)
-}
-
-func chooseStroke(rng *rand.Rand, p types.Params) (sw, op float64) {
-	sw = randRange(rng, p.StrokeMin, p.StrokeMax)
-	op = randRange(rng, p.OpacityMin, p.OpacityMax)
-	return
-}
-
-func maybeAccent(rng *rand.Rand, p types.Params) string {
-	if rng.Float64() < p.AccentProb {
-		return p.AccentColor
-	}
-	return p.StrokeColor
-}
-
 // Flower-of-life-ish: circles on hex lattice within radius.
-func layerHexCircleField(svg *SVG, rng *rand.Rand, p types.Params, center Pt) []Pt {
+func layerHexCircleField(svg *lib.SVG, rng *rand.Rand, p types.Params, center Pt) []Pt {
 	var centers []Pt
 
 	// hex basis
@@ -130,7 +57,7 @@ func layerHexCircleField(svg *SVG, rng *rand.Rand, p types.Params, center Pt) []
 			if dist(pt, center) <= p.BaseR {
 				centers = append(centers, pt)
 				sw, op := chooseStroke(rng, p)
-				svg.circle(pt.X, pt.Y, p.CircleRadius, maybeAccent(rng, p), sw, op, "")
+				svg.Circle(pt.X, pt.Y, p.CircleRadius, maybeAccent(rng, p), sw, op, "")
 			}
 		}
 	}
@@ -138,7 +65,7 @@ func layerHexCircleField(svg *SVG, rng *rand.Rand, p types.Params, center Pt) []
 }
 
 // Simple "Metatron-like" network: connect to K nearest neighbors.
-func layerNearestNetwork(svg *SVG, rng *rand.Rand, p types.Params, pts []Pt) {
+func layerNearestNetwork(svg *lib.SVG, rng *rand.Rand, p types.Params, pts []Pt) {
 	if p.MetatronK <= 0 || len(pts) < 2 {
 		return
 	}
@@ -169,13 +96,13 @@ func layerNearestNetwork(svg *SVG, rng *rand.Rand, p types.Params, pts []Pt) {
 		for t := 0; t < k; t++ {
 			j := nbs[t].j
 			sw, op := chooseStroke(rng, p)
-			svg.line(pts[i].X, pts[i].Y, pts[j].X, pts[j].Y, p.StrokeColor, sw, op*0.8)
+			svg.Line(pts[i].X, pts[i].Y, pts[j].X, pts[j].Y, p.StrokeColor, sw, op*0.8)
 		}
 	}
 }
 
 // Rosette using a polar radius function, rendered as a path.
-func layerRosette(svg *SVG, rng *rand.Rand, p types.Params, center Pt) {
+func layerRosette(svg *lib.SVG, rng *rand.Rand, p types.Params, center Pt) {
 	n := 720 // smoothness
 	lobes := float64(p.RosetteCount)
 	jit := p.RosetteJ
@@ -190,7 +117,7 @@ func layerRosette(svg *SVG, rng *rand.Rand, p types.Params, center Pt) {
 
 		// radius modulation + jitter
 		r := p.RosetteR0 + (p.RosetteR1-p.RosetteR0)*(0.5+0.5*math.Cos(lobes*thq))
-		r *= (1.0 + randRange(rng, -jit, jit))
+		r *= (1.0 + lib.RandRange(rng, -jit, jit))
 
 		pt := add(center, polar(r, thq))
 		if t == 0 {
@@ -202,7 +129,57 @@ func layerRosette(svg *SVG, rng *rand.Rand, p types.Params, center Pt) {
 	d.WriteString("Z")
 
 	sw, op := chooseStroke(rng, p)
-	svg.path(d.String(), maybeAccent(rng, p), sw, op, "")
+	svg.Path(d.String(), maybeAccent(rng, p), sw, op, "")
+}
+
+func layerRosetteWithPalette(svg *lib.SVG, rng *rand.Rand, p types.Params, pal types.Palette, center Pt) {
+	n := 720 // smoothness; higher = smoother path
+
+	lobes := float64(p.RosetteCount)
+	jit := p.RosetteJ
+
+	var d bytes.Buffer
+	for t := 0; t <= n; t++ {
+		u := float64(t) / float64(n)
+		th := u * 2 * math.Pi
+
+		// quantize angle to reinforce "sacred" symmetry
+		thq := quantizeAngle(th, p.RotOrder)
+
+		// rosette radius modulation (cosine lobes) + jitter
+		// r ranges between RosetteR0 and RosetteR1
+		r := p.RosetteR0 + (p.RosetteR1-p.RosetteR0)*(0.5+0.5*math.Cos(lobes*thq))
+		r *= (1.0 + lib.RandRange(rng, -jit, jit))
+
+		pt := add(center, polar(r, thq))
+
+		if t == 0 {
+			d.WriteString(fmt.Sprintf("M %.3f %.3f ", pt.X, pt.Y))
+		} else {
+			d.WriteString(fmt.Sprintf("L %.3f %.3f ", pt.X, pt.Y))
+		}
+	}
+	d.WriteString("Z")
+
+	// style
+	sw, op := chooseStroke(rng, p)
+	color := types.PickStrokeOrAccent(rng, p, pal)
+
+	// draw
+	svg.Path(d.String(), color, sw, op, "")
+}
+
+func chooseStroke(rng *rand.Rand, p types.Params) (sw, op float64) {
+	sw = lib.RandRange(rng, p.StrokeMin, p.StrokeMax)
+	op = lib.RandRange(rng, p.OpacityMin, p.OpacityMax)
+	return
+}
+
+func maybeAccent(rng *rand.Rand, p types.Params) string {
+	if rng.Float64() < p.AccentProb {
+		return p.AccentColor
+	}
+	return p.StrokeColor
 }
 
 /* ---------------- Symmetry wrapper ---------------- */
@@ -239,18 +216,59 @@ func main() {
 
 	rng := rand.New(rand.NewSource(p.Seed))
 
-	// center with slight jitter
-	cx := float64(p.Width)/2 + randRange(rng, -p.CenterJ, p.CenterJ)*float64(p.Width)
-	cy := float64(p.Height)/2 + randRange(rng, -p.CenterJ, p.CenterJ)*float64(p.Height)
-	center := Pt{cx, cy}
+	// 1) Generate palette (driven by seed via rng)
+	pp := types.PaletteParams{
+		Mode:    lib.ChooseRandom(rng, []string{"mono", "analogous", "complementary", "triad"}),
+		HueBase: -1, // <0 => random hue
+		HueJit:  lib.RandRange(rng, 4, 18),
+		SatMin:  0.35,
+		SatMax:  0.85,
+		LumMin:  0.45,
+		LumMax:  0.82,
+	}
+	pal := types.GenPalette(rng, pp)
 
-	svg := NewSVG(p.Width, p.Height, p.BgColor)
+	// 2) Set Params colors from palette (so Params remains “authoritative”)
+	p.BgColor = pal.Bg1
+	p.StrokeColor = types.PickStroke(rng, pal) // a representative default stroke
+	if len(pal.Accents) > 0 {
+		p.AccentColor = pal.Accents[0]
+	}
+	// AccentProb can also be randomized if desired
+	p.AccentProb = lib.RandRange(rng, 0.04, 0.12)
 
+	// 3) Create SVG using the palette background
+	// using the gradient background:
+	svg := lib.NewSVG(p.Width, p.Height, pal.Bg1, pal.Bg2)
+
+	// ... rest of your generation ...
+	// Wherever you previously did:
+	// maybeAccent(rng, p)
+	// replace with:
+	// pickStrokeOrAccent(rng, p, pal)
+
+	// Example: rings
+	center := Pt{float64(p.Width) / 2, float64(p.Height) / 2}
+	for i := 1; i <= p.RingCount; i++ {
+		r := float64(i) * p.RingSpacing
+		sw, op := chooseStroke(rng, p)
+		color := types.PickStroke(rng, pal)
+		svg.Circle(center.X, center.Y, r, color, sw, op*0.8, "")
+	}
+
+	// Example: rosette stroke:
+	layerRosetteWithPalette(svg, rng, p, pal, center)
+
+	//// center with slight jitter
+	//cx := float64(p.Width)/2 + lib.RandRange(rng, -p.CenterJ, p.CenterJ)*float64(p.Width)
+	//cy := float64(p.Height)/2 + lib.RandRange(rng, -p.CenterJ, p.CenterJ)*float64(p.Height)
+	//center := Pt{cx, cy}
+	//
 	// Big boundary rings
 	for i := 1; i <= p.RingCount; i++ {
 		r := float64(i) * p.RingSpacing
 		sw, op := chooseStroke(rng, p)
-		svg.circle(center.X, center.Y, r, p.StrokeColor, sw, op*0.8, "")
+		svg.Circle(center.X, center.Y, r, p.StrokeColor, sw, op*0.8, "")
 	}
 
 	// Symmetry: rotate motifs around center for coherence.
@@ -281,8 +299,8 @@ func main() {
 		layerNearestNetwork(svg, rng, p, allCenters)
 	}
 
+	// output
 	out := svg.Close()
-	_ = os.WriteFile("sacred_1.svg", []byte(out), 0644)
-
-	fmt.Printf("Wrote sacred_1.svg (seed=%d)\n", p.Seed)
+	_ = os.WriteFile("sacred.svg", []byte(out), 0644)
+	fmt.Printf("Wrote sacred.svg (seed=%d)\n", p.Seed)
 }
