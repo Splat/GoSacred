@@ -45,6 +45,101 @@ type Params struct {
 	AccentProb  float64
 }
 
+func randFloat(r *rand.Rand, min, max float64) float64 {
+	return min + r.Float64()*(max-min)
+}
+
+func randInt(r *rand.Rand, min, max int) int {
+	return min + r.Intn(max-min+1)
+}
+
+func choose[T any](r *rand.Rand, items []T) T {
+	return items[r.Intn(len(items))]
+}
+
+func chance(r *rand.Rand, p float64) bool {
+	return r.Float64() < p
+}
+
+var symmetryOrders = []int{3, 4, 6, 8, 10, 12, 16}
+var canvasSizes = []int{900, 1000, 1200, 1600, 2000}
+
+var paletteModes = []string{
+	"mono",
+	"analogous",
+	"complementary",
+	"triad",
+}
+
+var sacredRatios = []float64{
+	1.0,
+	math.Sqrt2,
+	math.Sqrt(3),
+	(1 + math.Sqrt(5)) / 2, // φ
+}
+
+/*
+randomParams generates random parameters for the drawing outside specified
+size constraints. Recommend 1200, 1200, 40 for messing around
+*/
+func randomParams(height int, width int, margin float64) Params {
+	seed := time.Now().UnixNano()
+	r := rand.New(rand.NewSource(seed))
+
+	size := choose(r, canvasSizes)
+	sym := choose(r, symmetryOrders)
+
+	baseR := randFloat(r, float64(size)*0.30, float64(size)*0.48)
+	ratio := choose(r, sacredRatios)
+
+	ringSpacing := randFloat(r, 40, 90) * ratio
+	ringCount := randInt(r, 4, 9)
+
+	gridSpacing := randFloat(r, 60, 110) * ratio
+	circleRadius := gridSpacing * randFloat(r, 0.45, 0.65)
+
+	return Params{
+		Seed: seed,
+
+		Width:  size,
+		Height: size,
+		Margin: randFloat(r, 20, 60),
+
+		RotOrder: sym,
+		Mirror:   chance(r, 0.35),
+		CenterJ:  randFloat(r, 0.0, 0.035),
+
+		BaseR:       baseR,
+		RingCount:   ringCount,
+		RingSpacing: ringSpacing,
+
+		CircleGridSpacing: gridSpacing,
+		CircleRadius:      circleRadius,
+
+		DrawMetatron: chance(r, 0.65),
+		MetatronK:    randInt(r, 2, 4),
+
+		RosetteCount: sym * randInt(r, 1, 3),
+		RosetteR0:    baseR * randFloat(r, 0.20, 0.35),
+		RosetteR1:    baseR * randFloat(r, 0.75, 1.05),
+		RosetteJ:     randFloat(r, 0.0, 0.03),
+
+		StrokeMin: randFloat(r, 0.5, 0.9),
+		StrokeMax: randFloat(r, 1.8, 3.0),
+
+		OpacityMin: randFloat(r, 0.05, 0.15),
+		OpacityMax: randFloat(r, 0.45, 0.85),
+
+		// These will usually be overridden by palette generation,
+		// but safe defaults matter
+		// TODO: leverage palette modes
+		BgColor:     "#0b0b10",
+		StrokeColor: "#eaeaea",
+		AccentColor: "#c7a86b",
+		AccentProb:  randFloat(r, 0.04, 0.12),
+	}
+}
+
 func defaultParams() Params {
 	return Params{
 		Seed: time.Now().UnixNano(),
@@ -85,7 +180,6 @@ func defaultParams() Params {
 }
 
 /* ---------------- SVG Builder ---------------- */
-
 type SVG struct {
 	w, h int
 	buf  bytes.Buffer
