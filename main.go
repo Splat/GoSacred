@@ -42,7 +42,7 @@ func quantizeAngle(th float64, order int) float64 {
 }
 
 // Flower-of-life-ish: circles on hex lattice within radius.
-func layerHexCircleField(svg *lib.SVG, rng *rand.Rand, p types.Params, center Pt) []Pt {
+func layerHexCircleField(svg *lib.SVG, rng *rand.Rand, p types.Params, pal types.Palette, center Pt) []Pt {
 	var centers []Pt
 
 	// hex basis
@@ -57,7 +57,7 @@ func layerHexCircleField(svg *lib.SVG, rng *rand.Rand, p types.Params, center Pt
 			if dist(pt, center) <= p.BaseR {
 				centers = append(centers, pt)
 				sw, op := chooseStroke(rng, p)
-				svg.Circle(pt.X, pt.Y, p.CircleRadius, maybeAccent(rng, p), sw, op, "")
+				svg.Circle(pt.X, pt.Y, p.CircleRadius, types.PickStrokeOrAccent(rng, p, pal), sw, op, "")
 			}
 		}
 	}
@@ -102,7 +102,7 @@ func layerNearestNetwork(svg *lib.SVG, rng *rand.Rand, p types.Params, pts []Pt)
 }
 
 // Rosette using a polar radius function, rendered as a path.
-func layerRosette(svg *lib.SVG, rng *rand.Rand, p types.Params, center Pt) {
+func layerRosette(svg *lib.SVG, rng *rand.Rand, p types.Params, pal types.Palette, center Pt) {
 	n := 720 // smoothness
 	lobes := float64(p.RosetteCount)
 	jit := p.RosetteJ
@@ -129,7 +129,7 @@ func layerRosette(svg *lib.SVG, rng *rand.Rand, p types.Params, center Pt) {
 	d.WriteString("Z")
 
 	sw, op := chooseStroke(rng, p)
-	svg.Path(d.String(), maybeAccent(rng, p), sw, op, "")
+	svg.Path(d.String(), types.PickStrokeOrAccent(rng, p, pal), sw, op, "")
 }
 
 func layerRosetteWithPalette(svg *lib.SVG, rng *rand.Rand, p types.Params, pal types.Palette, center Pt) {
@@ -175,16 +175,9 @@ func chooseStroke(rng *rand.Rand, p types.Params) (sw, op float64) {
 	return
 }
 
-func maybeAccent(rng *rand.Rand, p types.Params) string {
-	if rng.Float64() < p.AccentProb {
-		return p.AccentColor
-	}
-	return p.StrokeColor
-}
-
 /* ---------------- Symmetry wrapper ---------------- */
 
-func withSymmetry(rng *rand.Rand, p types.Params, center Pt, draw func(theta float64, mirror bool)) {
+func withSymmetry(rng *rand.Rand, p types.Params, pal types.Palette, center Pt, draw func(theta float64, mirror bool)) {
 	order := p.RotOrder
 	if order <= 0 {
 		draw(0, false)
@@ -273,12 +266,12 @@ func main() {
 
 	// Symmetry: rotate motifs around center for coherence.
 	var allCenters []Pt
-	withSymmetry(rng, p, center, func(theta float64, mirror bool) {
+	withSymmetry(rng, p, pal, center, func(theta float64, mirror bool) {
 		// local transform around center
 		localCenter := center
 
 		// generate hex field, then rotate its points
-		pts := layerHexCircleField(svg, rng, p, localCenter)
+		pts := layerHexCircleField(svg, rng, p, pal, localCenter)
 
 		// rotate points for symmetry instance
 		for _, pt := range pts {
@@ -291,7 +284,7 @@ func main() {
 		}
 
 		// rosette per symmetry instance (light)
-		layerRosette(svg, rng, p, localCenter)
+		layerRosette(svg, rng, p, pal, localCenter)
 	})
 
 	// Network layer (optional)
