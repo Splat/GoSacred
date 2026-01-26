@@ -193,6 +193,32 @@ func withSymmetry(rng *rand.Rand, p types.Params, pal types.Palette, center Pt, 
 	}
 }
 
+/* ---------------- Depth 3d ---------------- */
+type Pt3 struct{ X, Y, Z float64 }
+
+func projectPerspective(p Pt3, camZ, fov float64) Pt {
+	// Simple pinhole: assumes camera looking toward -Z, centered at origin.
+	// camZ > 0. Larger camZ moves camera "back".
+	z := camZ - p.Z
+	if z < 1e-3 {
+		z = 1e-3
+	}
+	scale := fov / z
+	return Pt{p.X * scale, p.Y * scale}
+}
+
+func depthStyle(z float64, zMin, zMax float64, baseSW, baseOp float64) (sw, op float64) {
+	// Normalize z to 0..1
+	t := 0.0
+	if zMax > zMin {
+		t = (z - zMin) / (zMax - zMin)
+	}
+	// Near = higher t
+	sw = baseSW * (0.7 + 0.9*t)
+	op = baseOp * (0.25 + 0.85*t)
+	return
+}
+
 /* ---------------- Main composition ---------------- */
 func main() {
 	//p := types.DefaultParams()
@@ -214,10 +240,10 @@ func main() {
 		Mode:    lib.ChooseRandom(rng, []string{"mono", "analogous", "complementary", "triad"}),
 		HueBase: -1, // <0 => random hue
 		HueJit:  lib.RandRange(rng, 4, 18),
-		SatMin:  0.35,
-		SatMax:  0.85,
-		LumMin:  0.45,
-		LumMax:  0.82,
+		SatMin:  0.15,
+		SatMax:  0.95,
+		LumMin:  0.15,
+		LumMax:  0.92,
 	}
 	pal := types.GenPalette(rng, pp)
 
@@ -227,18 +253,10 @@ func main() {
 	if len(pal.Accents) > 0 {
 		p.AccentColor = pal.Accents[0]
 	}
-	// AccentProb can also be randomized if desired
-	p.AccentProb = lib.RandRange(rng, 0.04, 0.12)
+	p.AccentProb = lib.RandRange(rng, 0.04, 0.5)
 
-	// 3) Create SVG using the palette background
-	// using the gradient background:
+	// 3) Create SVG using the palette background using the gradient background:
 	svg := lib.NewSVG(p.Width, p.Height, pal.Bg1, pal.Bg2)
-
-	// ... rest of your generation ...
-	// Wherever you previously did:
-	// maybeAccent(rng, p)
-	// replace with:
-	// pickStrokeOrAccent(rng, p, pal)
 
 	// Example: rings
 	center := Pt{float64(p.Width) / 2, float64(p.Height) / 2}
@@ -251,12 +269,9 @@ func main() {
 
 	// Example: rosette stroke:
 	layerRosetteWithPalette(svg, rng, p, pal, center)
+	layerRosetteWithPalette(svg, rng, p, pal, center)
+	layerRosetteWithPalette(svg, rng, p, pal, center)
 
-	//// center with slight jitter
-	//cx := float64(p.Width)/2 + lib.RandRange(rng, -p.CenterJ, p.CenterJ)*float64(p.Width)
-	//cy := float64(p.Height)/2 + lib.RandRange(rng, -p.CenterJ, p.CenterJ)*float64(p.Height)
-	//center := Pt{cx, cy}
-	//
 	// Big boundary rings
 	for i := 1; i <= p.RingCount; i++ {
 		r := float64(i) * p.RingSpacing
@@ -269,10 +284,8 @@ func main() {
 	withSymmetry(rng, p, pal, center, func(theta float64, mirror bool) {
 		// local transform around center
 		localCenter := center
-
 		// generate hex field, then rotate its points
 		pts := layerHexCircleField(svg, rng, p, pal, localCenter)
-
 		// rotate points for symmetry instance
 		for _, pt := range pts {
 			v := sub(pt, localCenter)
@@ -282,7 +295,6 @@ func main() {
 			v = rot(v, theta)
 			allCenters = append(allCenters, add(localCenter, v))
 		}
-
 		// rosette per symmetry instance (light)
 		layerRosette(svg, rng, p, pal, localCenter)
 	})
