@@ -41,6 +41,18 @@ func quantizeAngle(th float64, order int) float64 {
 	return math.Round(th/step) * step
 }
 
+// radialFalloff returns 1.0 at center (d=0) and 0.0 at edge (d>=maxR).
+func radialFalloff(d, maxR float64) float64 {
+	t := d / maxR
+	if t > 1.0 {
+		t = 1.0
+	}
+	if t < 0.0 {
+		t = 0.0
+	}
+	return 1.0 - t
+}
+
 // Flower-of-life-ish: circles on hex lattice within radius.
 func layerHexCircleField(svg *lib.SVG, rng *rand.Rand, p types.Params, pal types.Palette, center Pt) []Pt {
 	var centers []Pt
@@ -55,8 +67,16 @@ func layerHexCircleField(svg *lib.SVG, rng *rand.Rand, p types.Params, pal types
 		for j := -maxN; j <= maxN; j++ {
 			pt := add(center, add(mul(a, float64(i)), mul(b, float64(j))))
 			if dist(pt, center) <= p.BaseR {
+				// Radial falloff: bold at center, fading at edges
+				f := radialFalloff(dist(pt, center), p.BaseR)
+				// Grid dropout: more likely to skip circles near edges
+				if rng.Float64() < p.GridDropout*(1.0-f*f) {
+					continue
+				}
 				centers = append(centers, pt)
 				sw, op := chooseStroke(rng, p)
+				sw *= 0.3 + 0.7*f
+				op *= 0.2 + 0.8*f*f
 				svg.Circle(pt.X, pt.Y, p.CircleRadius, types.PickStrokeOrAccent(rng, p, pal), sw, op, "")
 			}
 		}
@@ -65,7 +85,7 @@ func layerHexCircleField(svg *lib.SVG, rng *rand.Rand, p types.Params, pal types
 }
 
 // Simple "Metatron-like" network: connect to K nearest neighbors.
-func layerNearestNetwork(svg *lib.SVG, rng *rand.Rand, p types.Params, pts []Pt) {
+func layerNearestNetwork(svg *lib.SVG, rng *rand.Rand, p types.Params, pts []Pt, center Pt) {
 	if p.MetatronK <= 0 || len(pts) < 2 {
 		return
 	}
@@ -96,6 +116,11 @@ func layerNearestNetwork(svg *lib.SVG, rng *rand.Rand, p types.Params, pts []Pt)
 		for t := 0; t < k; t++ {
 			j := nbs[t].j
 			sw, op := chooseStroke(rng, p)
+			// Radial falloff based on line midpoint
+			mid := Pt{(pts[i].X + pts[j].X) / 2, (pts[i].Y + pts[j].Y) / 2}
+			f := radialFalloff(dist(mid, center), p.BaseR*1.2)
+			sw *= 0.3 + 0.7*f
+			op *= 0.2 + 0.8*f*f
 			svg.Line(pts[i].X, pts[i].Y, pts[j].X, pts[j].Y, p.StrokeColor, sw, op*0.8)
 		}
 	}
@@ -260,11 +285,25 @@ func main() {
 
 	// Example: rings
 	center := Pt{float64(p.Width) / 2, float64(p.Height) / 2}
+	maxR := math.Max(p.BaseR, float64(p.RingCount)*p.RingSpacing) * 1.2
+
+	// Glow pass: soft blurred halo behind main geometry
+	svg.GroupOpen(`filter="url(#glow)" opacity="0.3"`)
 	for i := 1; i <= p.RingCount; i++ {
 		r := float64(i) * p.RingSpacing
+		f := radialFalloff(r, maxR)
+		color := types.PickStroke(rng, pal)
+		svg.Circle(center.X, center.Y, r, color, p.StrokeMax*2.5, 0.5*f, "")
+	}
+	svg.GroupClose()
+
+	// Crisp rings with radial falloff
+	for i := 1; i <= p.RingCount; i++ {
+		r := float64(i) * p.RingSpacing
+		f := radialFalloff(r, maxR)
 		sw, op := chooseStroke(rng, p)
 		color := types.PickStroke(rng, pal)
-		svg.Circle(center.X, center.Y, r, color, sw, op*0.8, "")
+		svg.Circle(center.X, center.Y, r, color, sw*(0.3+0.7*f), op*0.8*(0.2+0.8*f*f), "")
 	}
 
 	// Example: rosette stroke:
@@ -272,11 +311,12 @@ func main() {
 	layerRosetteWithPalette(svg, rng, p, pal, center)
 	layerRosetteWithPalette(svg, rng, p, pal, center)
 
-	// Big boundary rings
+	// Big boundary rings with radial falloff
 	for i := 1; i <= p.RingCount; i++ {
 		r := float64(i) * p.RingSpacing
+		f := radialFalloff(r, maxR)
 		sw, op := chooseStroke(rng, p)
-		svg.Circle(center.X, center.Y, r, p.StrokeColor, sw, op*0.8, "")
+		svg.Circle(center.X, center.Y, r, p.StrokeColor, sw*(0.3+0.7*f), op*0.8*(0.2+0.8*f*f), "")
 	}
 
 	// Symmetry: rotate motifs around center for coherence.
@@ -301,7 +341,7 @@ func main() {
 
 	// Network layer (optional)
 	if p.DrawMetatron {
-		layerNearestNetwork(svg, rng, p, allCenters)
+		layerNearestNetwork(svg, rng, p, allCenters, center)
 	}
 
 	// output

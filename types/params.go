@@ -40,6 +40,8 @@ type Params struct {
 	StrokeColor string
 	AccentColor string
 	AccentProb  float64
+
+	GridDropout float64 // probability of skipping hex grid circles (0-0.45)
 }
 
 func DefaultParams() Params {
@@ -78,6 +80,8 @@ func DefaultParams() Params {
 		StrokeColor: "#f2f2f2",
 		AccentColor: "#c7a86b",
 		AccentProb:  0.08,
+
+		GridDropout: 0.25,
 	}
 }
 
@@ -140,6 +144,8 @@ func RandomParams() Params {
 		StrokeColor: "#eaeaea",
 		AccentColor: "#c7a86b",
 		AccentProb:  randFloat(r, 0.04, 0.12),
+
+		GridDropout: randFloat(r, 0.15, 0.45),
 	}
 }
 

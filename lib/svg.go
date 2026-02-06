@@ -25,10 +25,21 @@ func NewSVG(w, h int, bg1, bg2 string) *SVG {
 	s.buf.WriteString(fmt.Sprintf(`<stop offset="0%%" stop-color="%s"/>`, bg1))
 	s.buf.WriteString(fmt.Sprintf(`<stop offset="100%%" stop-color="%s"/>`, bg2))
 	s.buf.WriteString(`</linearGradient>`)
+	s.buf.WriteString(`<filter id="glow" x="-50%" y="-50%" width="200%" height="200%">`)
+	s.buf.WriteString(`<feGaussianBlur stdDeviation="4"/>`)
+	s.buf.WriteString(`</filter>`)
 	s.buf.WriteString(`</defs>`)
 
 	s.Rect(0, 0, float64(w), float64(h), "url(#bg)", 1.0)
 	return s
+}
+
+func (s *SVG) GroupOpen(attrs string) {
+	s.buf.WriteString(fmt.Sprintf(`<g %s>`, attrs))
+}
+
+func (s *SVG) GroupClose() {
+	s.buf.WriteString(`</g>`)
 }
 
 func (s *SVG) Close() string {
