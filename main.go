@@ -200,6 +200,95 @@ func chooseStroke(rng *rand.Rand, p types.Params) (sw, op float64) {
 	return
 }
 
+// layerFilledTranslucentShapes draws filled triangles and hexagons at hex
+// lattice positions using accent colors at very low opacity (0.02-0.08).
+// Overlapping translucent fills create emergent color mixing.
+func layerFilledTranslucentShapes(svg *lib.SVG, rng *rand.Rand, p types.Params, pal types.Palette, center Pt) {
+	if len(pal.Accents) == 0 {
+		return
+	}
+
+	// hex basis vectors (same lattice as circle field)
+	a := Pt{p.CircleGridSpacing, 0}
+	b := Pt{p.CircleGridSpacing * 0.5, p.CircleGridSpacing * math.Sin(math.Pi/3)}
+
+	maxN := int(math.Ceil(p.BaseR/p.CircleGridSpacing)) + 2
+
+	// shape size varies slightly per run for organic feel
+	baseSize := p.CircleGridSpacing * lib.RandRange(rng, 0.55, 0.80)
+
+	for i := -maxN; i <= maxN; i++ {
+		for j := -maxN; j <= maxN; j++ {
+			pt := add(center, add(mul(a, float64(i)), mul(b, float64(j))))
+			if dist(pt, center) > p.BaseR*1.05 {
+				continue
+			}
+
+			// density dropout
+			if rng.Float64() < p.FilledShapeDropout {
+				continue
+			}
+
+			// radial falloff: shapes near center are slightly more opaque
+			f := radialFalloff(dist(pt, center), p.BaseR)
+			op := lib.RandRange(rng, 0.02, 0.08) * (0.5 + 0.5*f)
+
+			color := pal.Accents[rng.Intn(len(pal.Accents))]
+
+			// small per-shape size jitter
+			size := baseSize * lib.RandRange(rng, 0.85, 1.15)
+
+			var pathStr string
+			if rng.Float64() < 0.5 {
+				// regular hexagon
+				pathStr = hexagonPath(pt, size)
+			} else {
+				// equilateral triangle, alternating orientation by lattice parity
+				flip := (i+j)%2 == 0
+				pathStr = trianglePath(pt, size, flip)
+			}
+
+			// fill only, no stroke
+			svg.Path(pathStr, "none", 0, op, color)
+		}
+	}
+}
+
+func hexagonPath(center Pt, size float64) string {
+	var d bytes.Buffer
+	for k := 0; k < 6; k++ {
+		angle := float64(k)*math.Pi/3 + math.Pi/6
+		px := center.X + size*math.Cos(angle)
+		py := center.Y + size*math.Sin(angle)
+		if k == 0 {
+			d.WriteString(fmt.Sprintf("M %.3f %.3f", px, py))
+		} else {
+			d.WriteString(fmt.Sprintf(" L %.3f %.3f", px, py))
+		}
+	}
+	d.WriteString(" Z")
+	return d.String()
+}
+
+func trianglePath(center Pt, size float64, flip bool) string {
+	var d bytes.Buffer
+	for k := 0; k < 3; k++ {
+		angle := float64(k)*2*math.Pi/3 - math.Pi/2
+		if flip {
+			angle += math.Pi
+		}
+		px := center.X + size*math.Cos(angle)
+		py := center.Y + size*math.Sin(angle)
+		if k == 0 {
+			d.WriteString(fmt.Sprintf("M %.3f %.3f", px, py))
+		} else {
+			d.WriteString(fmt.Sprintf(" L %.3f %.3f", px, py))
+		}
+	}
+	d.WriteString(" Z")
+	return d.String()
+}
+
 /* ---------------- Symmetry wrapper ---------------- */
 
 func withSymmetry(rng *rand.Rand, p types.Params, pal types.Palette, center Pt, draw func(theta float64, mirror bool)) {
@@ -296,6 +385,9 @@ func main() {
 		svg.Circle(center.X, center.Y, r, color, p.StrokeMax*2.5, 0.5*f, "")
 	}
 	svg.GroupClose()
+
+	// Filled translucent shapes layer — painted colour wash beneath wireframes
+	layerFilledTranslucentShapes(svg, rng, p, pal, center)
 
 	// Crisp rings with radial falloff
 	for i := 1; i <= p.RingCount; i++ {

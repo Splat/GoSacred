@@ -42,6 +42,8 @@ type Params struct {
 	AccentProb  float64
 
 	GridDropout float64 // probability of skipping hex grid circles (0-0.45)
+
+	FilledShapeDropout float64 // probability of skipping a filled translucent shape (0-1)
 }
 
 func DefaultParams() Params {
@@ -82,6 +84,8 @@ func DefaultParams() Params {
 		AccentProb:  0.08,
 
 		GridDropout: 0.25,
+
+		FilledShapeDropout: 0.40,
 	}
 }
 
@@ -146,6 +150,8 @@ func RandomParams() Params {
 		AccentProb:  randFloat(r, 0.04, 0.12),
 
 		GridDropout: randFloat(r, 0.15, 0.45),
+
+		FilledShapeDropout: randFloat(r, 0.25, 0.60),
 	}
 }
 
