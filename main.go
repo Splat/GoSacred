@@ -386,7 +386,7 @@ func main() {
 	}
 	svg.GroupClose()
 
-	// Filled translucent shapes layer — painted colour wash beneath wireframes
+	// Filled translucent shapes layer painted colour wash beneath wireframes
 	layerFilledTranslucentShapes(svg, rng, p, pal, center)
 
 	// Crisp rings with radial falloff
